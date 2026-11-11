@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Генератор кулачкових дисків</title>
+
+<style>
+
+/* Скидаємо розрахунок розмірів, щоб padding не роздував блоки */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #e4e2dc;
+  color: #3b2a1e;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+/* Заголовок має фіксовану висоту, щоб слайдер міг зайняти решту екрана */
+h1 {
+  margin: 0;
+  padding: 0 24px;
+  height: 60px;
+  line-height: 60px;
+  font-size: 22px;
+  font-weight: normal;
+}
+
+/* Вікно слайдера: екран мінус заголовок (60px) і рядок кнопок під ним (88px) */
+#viewer {
+  height: calc(100vh - 60px - 88px);
+  overflow: hidden;
+  background: #f6f5f1;
+}
+
+/* Доріжка зі слайдами: усі слайди в один ряд, гортаємо зсувом доріжки */
+#track {
+  display: flex;
+  height: 100%;
+  transition: transform 0.35s ease;
+}
+
+/* Один слайд = одна пара дисків, на всю ширину вікна.
+   --d - діаметр одного диска: менша з двох величин (частка ширини або висоти),
+   тому пара вміщається і на широкому, і на вузькому екрані. */
+.slide {
+  --d: min(40vw, 58vh);
+  flex: 0 0 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4vw;
+}
+
+.disc {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: var(--d);
+}
+
+/* SVG диска розтягується на всю ширину, висота = ширині */
+.disc svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.disc .name {
+  margin-top: 1.5vh;
+  font-size: 14px;
+}
+
+/* Код диска виводимо моноширинним шрифтом, щоб цифри стояли рівно */
+.disc .code {
+  margin-top: 2px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+/* Кнопка "+" у верхньому правому куті диска: відкриває цей диск на весь екран.
+   Центр кнопки лежить рівно на куті квадрата, у який вписано диск. Відстань від
+   центра диска до цього кута = 0.707 діаметра, а до найближчої точки кнопки
+   (радіус 20px) - 0.707 діаметра мінус 20px. Це більше за радіус диска (0.5 діаметра),
+   поки диск ширший за ~100px, тож кнопка не налазить на малюнок і на малих екранах. */
+.open {
+  position: absolute;
+  top: -20px;
+  right: -20px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: #3b2a1e;
+  color: #f6f5f1;
+  border: none;
+  border-radius: 50%;
+  font-size: 24px;
+  line-height: 40px;
+  cursor: pointer;
+}
+
+/* "+" і "-" на кнопках малюємо смужками, а не символом шрифту: символ у шрифті
+   сидить у своєму рядку трохи вище чи нижче, і по центру кнопки виходить не рівно.
+   Смужки ставляться точно в середину (top/left 50% + зсув на пів власного розміру).
+   Довжина смужки - частка розміру кнопки, товщина - 2px. */
+.plus::before,
+.plus::after,
+.minus::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: #f6f5f1;
+  transform: translate(-50%, -50%);
+}
+
+/* Горизонтальна смужка: у "+" і в "-" */
+.plus::before,
+.minus::before {
+  width: 40%;
+  height: 2px;
+}
+
+/* Вертикальна смужка: лише у "+" */
+.plus::after {
+  width: 2px;
+  height: 40%;
+}
+
+/* Рядок кнопок гортання під слайдером */
+#navBar {
+  height: 88px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+}
+
+.nav {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  background: #3b2a1e;
+  color: #f6f5f1;
+  border: none;
+  border-radius: 50%;
+  font-size: 28px;
+  line-height: 56px;
+  cursor: pointer;
+}
+
+/* Повноекранна сцена з одним диском. Закриває всю сторінку; у справжній
+   повний екран переходить через Fullscreen API, а якщо браузер не вміє,
+   лишається накладкою на все вікно. */
+#stage {
+  --zoom: 1;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #f6f5f1;
+}
+
+#stage[hidden] {
+  display: none;
+}
+
+/* Розмір диска на сцені: --zoom = 1 - диск на весь екран (90% меншої сторони),
+   менші значення зменшують його для перевірки зчитування на різних розмірах */
+#stageDisc svg {
+  display: block;
+  width: calc(var(--zoom) * min(90vw, 90vh));
+  height: auto;
+}
+
+/* Кнопки сцени: закрити - вгорі праворуч, масштаб - внизу ліворуч,
+   подалі від диска, щоб не потрапляти в кадр камери */
+.ctl {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: #3b2a1e;
+  color: #f6f5f1;
+  border: none;
+  border-radius: 50%;
+  font-size: 26px;
+  line-height: 44px;
+  cursor: pointer;
+}
+
+#stageClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+#zoomBar {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  gap: 12px;
+}
+
+/* Кнопка масштабу на краю діапазону стає тьмяною */
+.ctl:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.open:focus-visible,
+.nav:focus-visible,
+.ctl:focus-visible {
+  outline: 2px solid #3b2a1e;
+  outline-offset: 2px;
+}
+
+</style>
+</head>
+<body>
+
+<h1>Кулачкові диски</h1>
+
+<div id="viewer">
+  <div id="track"></div>
+</div>
+
+<div id="navBar">
+  <button type="button" id="prev" class="nav" aria-label="Попередня пара">&#8249;</button>
+  <button type="button" id="next" class="nav" aria-label="Наступна пара">&#8250;</button>
+</div>
+
+<div id="stage" hidden>
+  <div id="stageDisc"></div>
+  <button type="button" id="stageClose" class="ctl" aria-label="Закрити">&times;</button>
+  <div id="zoomBar">
+    <button type="button" id="zoomOut" class="ctl minus" aria-label="Зменшити"></button>
+    <button type="button" id="zoomIn" class="ctl plus" aria-label="Збільшити"></button>
+  </div>
+</div>
+
+<script>
+
+/* =====================================================================
+   ПАРАМЕТРИ ДИСКА
+   Усе, що можна підкрутити за візуалом, зібране тут.
+   ===================================================================== */
+
+// Радіус диска в умовних одиницях SVG. Це лише масштаб:
+// друкувати можна будь-якого розміру, форма від цього не залежить.
+const R = 100;
+
+// Сторона квадратного вирізу як частка радіуса диска (стартове значення 0.5).
+const SQUARE_RATIO = 0.5;
+
+// Кількість секторів по колу. У кожному секторі рівно одна ямка,
+// тому ямки ніколи не збираються з одного боку диска.
+const SECTORS = 4;
+const SECTOR_DEG = 360 / SECTORS;          // 90° на сектор
+
+// Ширина ямки в градусах дуги кола. Ямка - півколо, діаметр якого
+// дорівнює хорді цієї дуги, тому глибина ямки = половина її ширини.
+const PIT_ARC_DEG = 20;
+
+// Позиції ямки всередині сектора: POSITIONS варіантів з кроком POSITION_STEP_DEG.
+// FIRST_POSITION_DEG - де стоїть центр ямки першої позиції від початку сектора.
+// При 30° / 10° / 4 позиції центри стоять на 30°, 40°, 50°, 60° від початку сектора,
+// тож проміжок між сусідніми ямками завжди від 60° до 120° (центр до центра),
+// а між краями ямок лишається щонайменше 40° рівного кола.
+const POSITIONS = 4;
+const POSITION_STEP_DEG = 10;
+const FIRST_POSITION_DEG = 30;
+
+// Скруглення переходу між ямкою і зовнішнім колом як частка радіуса диска.
+// Гострий кутик перетворюється на плавну дугу, дотичну і до кола, і до ямки.
+// Глибина ямки й положення її центра від цього не змінюються.
+// 0 - без скруглення. Більші значення за ~0.06 роблять ямку пологою,
+// і межу западини в профілі радіуса складніше визначити.
+const CORNER_ROUND_RATIO = 0.04;
+
+// Колір диска. Отвір під квадратом лишається прозорим.
+const DISC_COLOR = '#3b2a1e';
+
+/* =====================================================================
+   ГЕНЕРАЦІЯ УНІКАЛЬНИХ ДИСКІВ
+   Диск задається четвіркою позицій (по одній на сектор), наприклад [0,2,1,3].
+   Диск у книжці лежить під довільним поворотом, а камера не знає, де
+   починаються сектори. Тому справжній "відбиток" диска - це послідовність
+   чотирьох проміжків між ямками по колу. Дві четвірки, що дають ту саму
+   циклічну послідовність проміжків, - це один і той самий фізичний диск
+   (повернутий). Для кожного такого диска лишаємо одного представника.
+   ===================================================================== */
+
+// Центр ямки в градусах: слот 0 починається вгорі (-90°), далі за годинниковою
+function pitCenterAngle(sector, pos) {
+  return -90 + sector * SECTOR_DEG + FIRST_POSITION_DEG + pos * POSITION_STEP_DEG;
+}
+
+// Чотири проміжки між сусідніми ямками (в градусах), по колу
+function gapsOf(code) {
+  const centers = code.map((pos, s) => pitCenterAngle(s, pos));
+  return centers.map((c, i) => (centers[(i + 1) % SECTORS] - c + 360) % 360);
+}
+
+// Канонічний ключ: найменший (за рядком) серед усіх циклічних зсувів проміжків.
+// Однаковий ключ означає, що диски збігаються при повороті.
+function canonicalKey(code) {
+  const gaps = gapsOf(code);
+  let best = null;
+  for (let r = 0; r < SECTORS; r++) {
+    const rotated = gaps.map((_, i) => gaps[(i + r) % SECTORS]).join(',');
+    if (best === null || rotated < best) best = rotated;
+  }
+  return best;
+}
+
+// Перебираємо всі POSITIONS^SECTORS комбінацій і лишаємо перші з кожного ключа
+function buildDiscList() {
+  const list = [];
+  const seen = new Set();
+  const total = Math.pow(POSITIONS, SECTORS);
+  for (let n = 0; n < total; n++) {
+    // Розкладаємо число n на цифри за основою POSITIONS: це і є позиції по секторах
+    const code = [];
+    for (let s = 0; s < SECTORS; s++) {
+      code.push(Math.floor(n / Math.pow(POSITIONS, s)) % POSITIONS);
+    }
+    const key = canonicalKey(code);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    list.push(code);
+  }
+  return list;
+}
+
+/* =====================================================================
+   ПОРЯДОК ДИСКІВ
+   Хочемо, щоб сусідні диски (поруч у рядку сітки і в нумерації) візуально
+   максимально відрізнялися розташуванням ямок.
+   ===================================================================== */
+
+// "Відстань" між двома дисками: наскільки відрізняється розташування ямок.
+// Міряємо різницю проміжків між ямками (у градусах). Диск може лежати під
+// будь-яким поворотом, тому беремо найкраще співпадіння серед усіх поворотів.
+// Дзеркальний двійник на око теж схожий, тому перевіряємо ще й проміжки
+// у зворотному порядку: так дзеркальні пари теж вважаються близькими.
+function discDistance(codeA, codeB) {
+  const gA = gapsOf(codeA);
+  const gB = gapsOf(codeB);
+  const gBmirror = gB.slice().reverse();
+  let best = Infinity;
+  for (let r = 0; r < SECTORS; r++) {
+    let sum = 0;
+    let sumMirror = 0;
+    for (let i = 0; i < SECTORS; i++) {
+      sum += Math.abs(gA[i] - gB[(i + r) % SECTORS]);
+      sumMirror += Math.abs(gA[i] - gBmirror[(i + r) % SECTORS]);
+    }
+    best = Math.min(best, sum, sumMirror);
+  }
+  return best;
+}
+
+// Жадібний ланцюжок: кожен наступний диск - найвіддаленіший від попереднього.
+// Пробуємо кожен диск як початок і лишаємо ланцюжок, де найменша відстань
+// між сусідами найбільша (за рівності - більша сума відстаней).
+function orderByContrast(list) {
+  let bestOrder = null;
+  let bestMin = -1;
+  let bestSum = -1;
+
+  for (let start = 0; start < list.length; start++) {
+    const order = [list[start]];
+    const used = new Set([start]);
+    let minStep = Infinity;
+    let sumStep = 0;
+
+    while (order.length < list.length) {
+      const last = order[order.length - 1];
+      let pick = -1;
+      let pickDist = -1;
+      for (let i = 0; i < list.length; i++) {
+        if (used.has(i)) continue;
+        const dist = discDistance(last, list[i]);
+        if (dist > pickDist) { pickDist = dist; pick = i; }
+      }
+      used.add(pick);
+      order.push(list[pick]);
+      minStep = Math.min(minStep, pickDist);
+      sumStep += pickDist;
+    }
+
+    if (minStep > bestMin || (minStep === bestMin && sumStep > bestSum)) {
+      bestMin = minStep;
+      bestSum = sumStep;
+      bestOrder = order;
+    }
+  }
+  return bestOrder;
+}
+
+/* =====================================================================
+   МАЛЮВАННЯ ДИСКА В SVG
+   ===================================================================== */
+
+// Точка на колі радіуса rad під кутом angleDeg.
+// У SVG вісь Y дивиться вниз, тому зростання кута - це рух за годинниковою.
+function polar(angleDeg, rad) {
+  const a = angleDeg * Math.PI / 180;
+  return { x: rad * Math.cos(a), y: rad * Math.sin(a) };
+}
+
+// Округлення координат, щоб SVG був компактним і читабельним
+function fmt(n) {
+  return Math.round(n * 1000) / 1000;
+}
+
+function buildDiscSvg(code) {
+
+  const halfArc = PIT_ARC_DEG / 2;         // половина ширини ямки
+  const halfArcRad = halfArc * Math.PI / 180;
+  const pitRadius = R * Math.sin(halfArcRad);   // радіус півкола ямки
+  const pitDist = R * Math.cos(halfArcRad);     // відстань від центра диска до центра півкола ямки
+  const f = R * CORNER_ROUND_RATIO;             // радіус скруглення
+
+  // Скруглення - це маленьке коло радіуса f, що лежить усередині диска і
+  // торкається одночасно зовнішнього кола (зсередини) та ямки (ззовні).
+  // Його центр лежить на відстані (R - f) від центра диска і (pitRadius + f)
+  // від центра ямки. З цих двох умов (теорема косинусів) знаходимо кут,
+  // під яким стоїть центр скруглення відносно осі ямки.
+  // Без скруглення (f = 0) цей кут дорівнює куту краю ямки.
+  let cornerAngle = halfArc;
+  if (f > 0) {
+    const cosT = ((R - f) * (R - f) + pitDist * pitDist - (pitRadius + f) * (pitRadius + f)) /
+                 (2 * (R - f) * pitDist);
+    cornerAngle = Math.acos(cosT) * 180 / Math.PI;
+  }
+
+  // Для однієї ямки (вісь a) і одного боку (side = -1 ліво, +1 право) повертає:
+  //   tOut - де зовнішнє коло переходить у скруглення
+  //   tPit - де скруглення переходить у півколо ямки
+  function corner(a, side) {
+    const fc = polar(a + side * cornerAngle, R - f);   // центр кола скруглення
+    const pitCenter = polar(a, pitDist);               // центр півкола ямки
+    const dx = fc.x - pitCenter.x;
+    const dy = fc.y - pitCenter.y;
+    const len = Math.hypot(dx, dy);
+    return {
+      tOut: polar(a + side * cornerAngle, R),
+      tPit: { x: pitCenter.x + pitRadius * dx / len, y: pitCenter.y + pitRadius * dy / len }
+    };
+  }
+
+  // Центри всіх ямок, по зростанню кута (сектор 0, 1, 2, 3)
+  const centers = code.map((pos, s) => pitCenterAngle(s, pos));
+
+  let d = '';
+
+  centers.forEach((a, k) => {
+
+    const c1 = corner(a, -1);              // початок ямки (ліва сторона)
+    const c2 = corner(a, +1);              // кінець ямки (права сторона)
+
+    if (k === 0) {
+      // Починаємо контур із початку першої ямки
+      d += `M ${fmt(c1.tOut.x)} ${fmt(c1.tOut.y)} `;
+    } else {
+      // Рівна ділянка кола від кінця попередньої ямки до початку цієї.
+      // Прапорець великої дуги потрібен, коли проміжок більший за 180°
+      // (при цій схемі не трапляється, але хай рахується загально).
+      const gap = (a - cornerAngle) - (centers[k - 1] + cornerAngle);
+      const large = gap > 180 ? 1 : 0;
+      d += `A ${R} ${R} 0 ${large} 1 ${fmt(c1.tOut.x)} ${fmt(c1.tOut.y)} `;
+    }
+
+    // Скруглення на вході в ямку. Йдемо за годинниковою, матеріал диска
+    // праворуч від нас, центр скруглення теж у матеріалі, тому sweep = 1.
+    if (f > 0) {
+      d += `A ${fmt(f)} ${fmt(f)} 0 0 1 ${fmt(c1.tPit.x)} ${fmt(c1.tPit.y)} `;
+    }
+
+    // Сама ямка: дуга, що вигинається всередину диска (sweep = 0,
+    // тобто проти годинникової, коли ми йдемо по колу за годинниковою).
+    d += `A ${fmt(pitRadius)} ${fmt(pitRadius)} 0 0 0 ${fmt(c2.tPit.x)} ${fmt(c2.tPit.y)} `;
+
+    // Скруглення на виході з ямки
+    if (f > 0) {
+      d += `A ${fmt(f)} ${fmt(f)} 0 0 1 ${fmt(c2.tOut.x)} ${fmt(c2.tOut.y)} `;
+    }
+  });
+
+  // Замикаємо контур: рівна дуга від кінця останньої ямки до початку першої
+  const first = corner(centers[0], -1).tOut;
+  const closeGap = (centers[0] - cornerAngle + 360) - (centers[SECTORS - 1] + cornerAngle);
+  const closeLarge = closeGap > 180 ? 1 : 0;
+  d += `A ${R} ${R} 0 ${closeLarge} 1 ${fmt(first.x)} ${fmt(first.y)} Z `;
+
+  // Квадратний виріз по центру. Другий підконтур разом із правилом evenodd
+  // дає порожній отвір (прозорий, видно папір чи фон).
+  const h = (R * SQUARE_RATIO) / 2;
+  d += `M ${-h} ${-h} H ${h} V ${h} H ${-h} Z`;
+
+  // Поле з невеликим запасом навколо диска
+  const pad = 2;
+  const box = R + pad;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-box} ${-box} ${box * 2} ${box * 2}">` +
+         `<path d="${d}" fill="${DISC_COLOR}" fill-rule="evenodd"/>` +
+         `</svg>`;
+}
+
+/* =====================================================================
+   СЛАЙДЕР: ОДИН СЛАЙД = ПАРА ДИСКІВ
+   Диски йдуть у порядку максимальної відмінності сусідів, тому пара
+   (1-2, 3-4, ...) завжди візуально різна.
+   ===================================================================== */
+
+const track = document.getElementById('track');
+const stage = document.getElementById('stage');
+const stageDisc = document.getElementById('stageDisc');
+const zoomInBtn = document.getElementById('zoomIn');
+const zoomOutBtn = document.getElementById('zoomOut');
+
+let current = 0;        // номер слайда (пари), який зараз видно
+let slideCount = 0;     // скільки всього слайдів
+
+// Один диск із підписом (назва + код з чотирьох цифр)
+// і кнопкою "+" у верхньому правому куті
+function buildDiscElement(code, idx) {
+  const codeText = code.join('');     // наприклад "0213": позиція ямки в кожному секторі
+  const num = String(idx + 1).padStart(2, '0');
+
+  const disc = document.createElement('div');
+  disc.className = 'disc';
+  disc.innerHTML =
+    buildDiscSvg(code) +
+    `<div class="name">Диск ${num}</div>` +
+    `<div class="code">${codeText}</div>`;
+
+  const openBtn = document.createElement('button');
+  openBtn.type = 'button';
+  openBtn.className = 'open plus';
+  openBtn.setAttribute('aria-label', `Диск ${num} на весь екран`);
+  openBtn.addEventListener('click', () => openStage(code));
+
+  disc.appendChild(openBtn);
+  return disc;
+}
+
+function renderSlider() {
+  const discs = orderByContrast(buildDiscList());
+
+  // Беремо диски по двоє: кожна пара - окремий слайд
+  for (let i = 0; i < discs.length; i += 2) {
+    const slide = document.createElement('div');
+    slide.className = 'slide';
+    slide.appendChild(buildDiscElement(discs[i], i));
+    if (i + 1 < discs.length) {
+      slide.appendChild(buildDiscElement(discs[i + 1], i + 1));
+    }
+    track.appendChild(slide);
+  }
+  slideCount = track.children.length;
+  goTo(0);
+}
+
+// Перехід до слайда. Після останнього йде перший і навпаки (по колу).
+function goTo(index) {
+  current = (index + slideCount) % slideCount;
+  // Зсув у відсотках від ширини доріжки, а вона дорівнює ширині вікна
+  track.style.transform = `translateX(${-current * 100}%)`;
+}
+
+document.getElementById('prev').addEventListener('click', () => goTo(current - 1));
+document.getElementById('next').addEventListener('click', () => goTo(current + 1));
+
+/* =====================================================================
+   ОДИН ДИСК НА ВЕСЬ ЕКРАН З РУЧНИМ МАСШТАБОМ
+   Сцена показує лише один диск без підписів, щоб у кадр камери
+   не потрапляло нічого зайвого.
+   ===================================================================== */
+
+// Поточний масштаб: 1 = диск на весь екран, менше = менший диск.
+// Збільшити понад 1 не можна: диск перестав би вміщатися цілком.
+let zoom = 1;
+const ZOOM_STEP = 1.25;    // у стільки разів змінюється розмір за одне натискання
+const ZOOM_MIN = 0.05;
+const ZOOM_MAX = 1;
+
+function applyZoom() {
+  zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+  stage.style.setProperty('--zoom', zoom);
+  // Кнопка на краю діапазону вимикається (мала похибка на дробових числах)
+  zoomInBtn.disabled = zoom >= ZOOM_MAX - 1e-9;
+  zoomOutBtn.disabled = zoom <= ZOOM_MIN + 1e-9;
+}
+
+function openStage(code) {
+  stageDisc.innerHTML = buildDiscSvg(code);
+  stage.hidden = false;
+  applyZoom();
+  // Просимо справжній повний екран; якщо не вийшло, сцена лишається накладкою
+  if (stage.requestFullscreen) {
+    stage.requestFullscreen().catch(() => {});
+  }
+}
+
+function closeStage() {
+  stage.hidden = true;
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  }
+}
+
+// Вихід із повного екрана клавішею Esc теж закриває сцену
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) stage.hidden = true;
+});
+
+zoomInBtn.addEventListener('click', () => { zoom *= ZOOM_STEP; applyZoom(); });
+zoomOutBtn.addEventListener('click', () => { zoom /= ZOOM_STEP; applyZoom(); });
+document.getElementById('stageClose').addEventListener('click', closeStage);
+
+// Клавіатура: на сцені + і - міняють розмір, Esc закриває;
+// поза сценою стрілки гортають слайдер
+document.addEventListener('keydown', (e) => {
+  if (!stage.hidden) {
+    if (e.key === '+' || e.key === '=') { zoom *= ZOOM_STEP; applyZoom(); }
+    if (e.key === '-' || e.key === '_') { zoom /= ZOOM_STEP; applyZoom(); }
+    if (e.key === 'Escape') closeStage();
+    return;
+  }
+  if (e.key === 'ArrowLeft') goTo(current - 1);
+  if (e.key === 'ArrowRight') goTo(current + 1);
+});
+
+renderSlider();
+
+</script>
+</body>
+</html>
