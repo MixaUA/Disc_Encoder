@@ -15,8 +15,8 @@
 body {
   margin: 0;
   padding: 0;
-  background: #e4e2dc;
-  color: #3b2a1e;
+  background: #0e2a47;
+  color: #ffffff;
   font-family: Georgia, 'Times New Roman', serif;
 }
 
@@ -34,7 +34,7 @@ h1 {
 #viewer {
   height: calc(100vh - 60px - 88px);
   overflow: hidden;
-  background: #f6f5f1;
+  background: #0e2a47;
 }
 
 /* Доріжка зі слайдами: усі слайди в один ряд, гортаємо зсувом доріжки */
@@ -97,9 +97,9 @@ h1 {
   width: 40px;
   height: 40px;
   padding: 0;
-  background: #3b2a1e;
-  color: #f6f5f1;
-  border: none;
+  background: #0e2a47;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 50%;
   font-size: 24px;
   line-height: 40px;
@@ -117,7 +117,7 @@ h1 {
   position: absolute;
   top: 50%;
   left: 50%;
-  background: #f6f5f1;
+  background: #ffffff;
   transform: translate(-50%, -50%);
 }
 
@@ -147,9 +147,9 @@ h1 {
   width: 56px;
   height: 56px;
   padding: 0;
-  background: #3b2a1e;
-  color: #f6f5f1;
-  border: none;
+  background: #0e2a47;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 50%;
   font-size: 28px;
   line-height: 56px;
@@ -170,7 +170,7 @@ h1 {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #f6f5f1;
+  background: #0e2a47;
 }
 
 #stage[hidden] {
@@ -192,9 +192,9 @@ h1 {
   width: 44px;
   height: 44px;
   padding: 0;
-  background: #3b2a1e;
-  color: #f6f5f1;
-  border: none;
+  background: #0e2a47;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 50%;
   font-size: 26px;
   line-height: 44px;
@@ -224,7 +224,7 @@ h1 {
 .open:focus-visible,
 .nav:focus-visible,
 .ctl:focus-visible {
-  outline: 2px solid #3b2a1e;
+  outline: 2px solid #ffffff;
   outline-offset: 2px;
 }
 
@@ -291,8 +291,12 @@ const FIRST_POSITION_DEG = 30;
 // і межу западини в профілі радіуса складніше визначити.
 const CORNER_ROUND_RATIO = 0.04;
 
-// Колір диска. Отвір під квадратом лишається прозорим.
-const DISC_COLOR = '#3b2a1e';
+// Диск у стилі креслення (блюпринт): біла лінія контуру без заливки на синьому тлі
+// (тло задає CSS). Квадратний виріз теж намальований контуром.
+// Товщина лінії в умовних одиницях SVG (радіус диска = 100), тож вона росте
+// й зменшується разом із диском, як на справжньому кресленні.
+const LINE_COLOR = '#ffffff';
+const LINE_WIDTH = 3;
 
 /* =====================================================================
    ГЕНЕРАЦІЯ УНІКАЛЬНИХ ДИСКІВ
@@ -508,16 +512,16 @@ function buildDiscSvg(code) {
   const closeLarge = closeGap > 180 ? 1 : 0;
   d += `A ${R} ${R} 0 ${closeLarge} 1 ${fmt(first.x)} ${fmt(first.y)} Z `;
 
-  // Квадратний виріз по центру. Другий підконтур разом із правилом evenodd
-  // дає порожній отвір (прозорий, видно папір чи фон).
+  // Квадратний виріз по центру: ще один підконтур у тому самому шляху.
+  // Малюється такою самою лінією, як і контур диска, всередині нього порожньо.
   const h = (R * SQUARE_RATIO) / 2;
   d += `M ${-h} ${-h} H ${h} V ${h} H ${-h} Z`;
 
-  // Поле з невеликим запасом навколо диска
-  const pad = 2;
+  // Поле навколо диска: половина товщини лінії виступає за коло, плюс невеликий запас
+  const pad = LINE_WIDTH / 2 + 1;
   const box = R + pad;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-box} ${-box} ${box * 2} ${box * 2}">` +
-         `<path d="${d}" fill="${DISC_COLOR}" fill-rule="evenodd"/>` +
+         `<path d="${d}" fill="none" stroke="${LINE_COLOR}" stroke-width="${LINE_WIDTH}" stroke-linejoin="round" fill-rule="evenodd"/>` +
          `</svg>`;
 }
 
